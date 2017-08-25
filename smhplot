@@ -1,0 +1,255 @@
+#!/usr/bin/env python3
+import argparse
+import pandas as pd
+import matplotlib as mpl
+if not mpl.is_interactive(): mpl.use("Agg")
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+import numpy as np
+import os.path
+
+# general settings
+pd.set_option('mode.chained_assignment', None)
+mpl.style.use('seaborn')
+COLORS = [m['color'] for m in plt.rcParams['axes.prop_cycle']]
+
+CHROM_LIST = list(range(1, 23))
+CHROM_SZ = { 1: 249250621,  2: 243199373,  3: 198022430,  4: 191154276,
+             5: 180915260,  6: 171115067,  7: 159138663,  8: 146364022,
+             9: 141213431, 10: 135534747, 11: 135006516, 12: 133851895,
+            13: 115169878, 14: 107349540, 15: 102531392, 16:  90354753,
+            17:  81195210, 18:  78077248, 19:  59128983, 20:  63025520,
+            21:  48129895, 22:  51304566}
+
+CHROM_POS = {}
+shift = 0
+for chrom in CHROM_LIST:
+    CHROM_POS[chrom] = shift
+    shift += CHROM_SZ[chrom]
+
+MAF_RANGES = [[.050,float('NaN')],
+              [.010,.050],
+              [.005,.010],
+              [float('NaN'),.005]]
+
+MAF_SZMAP = [24, 12, 6, 2]
+MAF_MMAP = ['o', '^', '+', 'x']
+
+IQUAL_RANGES = [[.9,float('NaN')],
+                [.7,.9],
+                [float('NaN'),0.7]]
+
+MH_YLIM = 1e-20
+MH_YSPC = 1.025
+MH_THRES = 5e-8
+MH_PAL = [['#e24662', '#50b6ff'],
+          ['#9c2725', '#4c48b4'],
+          ['#f4a4bf', '#919dc2']]
+
+# --- parse parameters
+
+ap = argparse.ArgumentParser(description='Draw a Sparkling Manhattan plot')
+ap.add_argument('input', nargs='+', help='EPACTS input file/s')
+ap.add_argument('-o', dest='output', required=True,
+                 metavar='PREFIX', help='output prefix')
+ap.add_argument('--iqual-dir', help='Imputation quality directory')
+ap.add_argument('--title', help='Plot title')
+ap.add_argument('--ylim', type=float, default=MH_YLIM, help='Y upper limit (default: {})'.format(MH_YLIM))
+ap.add_argument('--no-legend', action='store_true', help='Disable legend')
+ap.add_argument('--chr', metavar=('START', 'END'), nargs=2, default=[CHROM_LIST[0], CHROM_LIST[-1]],
+                type=int, help="Chromosome range to plot (default: {}-{})".format(CHROM_LIST[0], CHROM_LIST[-1]))
+
+if not mpl.is_interactive():
+    args = ap.parse_args()
+else:
+    # testing
+    class Empty: pass
+    args = Empty()
+    args.no_legend = False
+    args.ylim = MH_YLIM
+    args.title = None
+    args.input = ["data/ODmblpRATIOres.epacts.gz"]
+    args.output = "test"
+    args.iqual_dir = "data/HRCv1.1-iqual"
+    args.chr = [1, 22]
+
+# setup arguments
+chrom_sset = slice(max(1, args.chr[0])-1,
+                   min(len(CHROM_LIST), args.chr[1])+1, 1)
+
+# --- load data
+
+data = pd.DataFrame()
+for fn in args.input:
+    print("loading data from {} ...".format(fn))
+    buf = pd.read_table(fn, sep="\t", encoding="latin1", header=0,
+                        usecols=['#CHROM', 'BEG', 'PVALUE', 'MAF'],
+                        dtype={'#CHROM': int, 'BEG': int, 'PVALUE': float, 'MAF': float})
+    buf.rename(columns={'#CHROM': 'CHROM'}, inplace=True)
+    buf.dropna(subset=['CHROM', 'BEG', 'PVALUE'], inplace=True)
+    data = data.append(buf)
+
+# --- split by chromosome and adjust positions
+
+data_chrom = {}
+for chrom in CHROM_LIST[chrom_sset]:
+    data_chrom[chrom] = data[data.CHROM == chrom]
+    data_chrom[chrom]['POS'] = data_chrom[chrom]['BEG'] + CHROM_POS[chrom]
+
+# --- load imputation quality
+
+for chrom in CHROM_LIST[chrom_sset]:
+    if args.iqual_dir is None:
+        data_chrom[chrom]['IMP_R2'] = 1.
+        continue
+
+    iqual_file = "{}/chr{}.rsq03.iqual.txt.gz".format(args.iqual_dir, chrom)
+    print("loading iqual {} from {} ...".format(chrom, iqual_file))
+    iqual_data = pd.read_table(iqual_file, sep="\t", encoding='latin1',
+                               usecols=['POS', 'IMP_R2'],
+                               dtype={'POS': int, 'IMP_R2': float})
+    buf = data_chrom[chrom]
+    buf = pd.merge_ordered(buf, iqual_data, how='left',
+                           left_on='BEG', right_on='POS',
+                           suffixes=('', '_'))
+    buf.drop('POS_', axis=1, inplace=True)
+
+    # we assume missing/unmatched locations are *not* imputed
+    buf.fillna(1, inplace=True)
+    data_chrom[chrom] = buf
+
+# --- mahnattan plot
+
+print('plotting mh ...')
+plt.clf()
+plt.gcf().set_size_inches(10, 5 if args.no_legend else 6)
+ticks = []
+labels = []
+xr = [None, None]
+yr = [0, 0]
+for chrom in CHROM_LIST[chrom_sset]:
+    # boundaries
+    if xr[0] is None or xr[0] > CHROM_POS[chrom]:
+        xr[0] = CHROM_POS[chrom]
+    if xr[1] is None or xr[1] < CHROM_POS[chrom] + CHROM_SZ[chrom]:
+        xr[1] = CHROM_POS[chrom] + CHROM_SZ[chrom]
+
+    # tick+label
+    if len(labels):
+        ticks.append(CHROM_POS[chrom])
+    labels.append((str(chrom), CHROM_POS[chrom] + CHROM_SZ[chrom] / 2))
+
+    # scatter
+    for ii, ir in reversed(list(enumerate(IQUAL_RANGES))):
+        sub = data_chrom[chrom]
+
+        # R2
+        if np.isfinite(ir[0]):
+            sub = sub[sub.IMP_R2 >= ir[0]]
+        if np.isfinite(ir[1]):
+            sub = sub[sub.IMP_R2 < ir[1]]
+
+        for mi, mr in enumerate(MAF_RANGES):
+            buf = sub
+
+            # MAF
+            if np.isfinite(mr[0]):
+                buf = buf[buf.MAF >= mr[0]]
+            if np.isfinite(mr[1]):
+                buf = buf[buf.MAF < mr[1]]
+
+            pval = -np.log10(buf.PVALUE)
+            pmax = pval[np.isfinite(pval)].max()
+            if pmax > yr[1]:
+                yr[1] = pmax
+
+            # plot
+            cslot = MH_PAL[ii]
+            col = cslot[chrom % len(cslot)]
+            sz = MAF_SZMAP[mi]
+            plt.scatter(buf.POS, pval, s=sz, c=col, edgecolors=None)
+
+# ylim adjustment
+thres = -np.log10(MH_THRES)
+ylim = -np.log10(args.ylim) if np.isfinite(args.ylim) else None
+if ylim is None or ylim > yr[1]:
+    # unlimited or no values above the limit
+    yr[1] = max(yr[1], thres) * MH_YSPC
+else:
+    # truncation markers are required
+    yr[1] = ylim * MH_YSPC
+    for chrom in CHROM_LIST[chrom_sset]:
+        for ii, ir in reversed(list(enumerate(IQUAL_RANGES))):
+            sub = data_chrom[chrom]
+
+            # R2
+            if np.isfinite(ir[0]):
+                sub = sub[sub.IMP_R2 >= ir[0]]
+            if np.isfinite(ir[1]):
+                sub = sub[sub.IMP_R2 < ir[1]]
+
+            for mi, mr in enumerate(MAF_RANGES):
+                buf = sub
+
+                # MAF
+                if np.isfinite(mr[0]):
+                    buf = buf[buf.MAF >= mr[0]]
+                if np.isfinite(mr[1]):
+                    buf = buf[buf.MAF < mr[1]]
+
+                # plot
+                buf = buf[-np.log10(buf.PVALUE) > yr[1]]
+                cslot = MH_PAL[ii]
+                col = cslot[chrom % len(cslot)]
+                sz = MAF_SZMAP[mi]
+                plt.scatter(buf.POS, np.full(len(buf), yr[1]),
+                            marker='^', s=sz, c=col, clip_on=False)
+
+plt.axhline(thres, linestyle='--', c=COLORS[1], alpha=0.7)
+plt.xticks(ticks, '' * len(ticks))
+plt.gca().set_xticks([l[1] for l in labels], minor=True)
+plt.gca().set_xticklabels([l[0] for l in labels], minor=True)
+plt.axis([xr[0], xr[1], yr[0], yr[1]])
+plt.ylabel(r'$-\log_{10}(p)$')
+
+if args.title:
+    plt.title(args.title)
+plt.tight_layout()
+
+if not args.no_legend:
+    class DualCircle(object):
+        def __init__(self, size, colors):
+            self.size = size
+            self.colors = colors
+
+    class DualCircleHandler(mpl.legend_handler.HandlerBase):
+        def create_artists(self, legend, orig_handle, xdescent, ydescent,
+                           width, height, fontsize, trans):
+            xy = (width/2, height/2)
+            sz = np.floor(np.sqrt(orig_handle.size))
+            c1 = mpl.patches.Circle(xy, sz, color=orig_handle.colors[0], linewidth=0)
+            c2 = mpl.patches.Wedge(xy, sz, 90, 270, color=orig_handle.colors[1], linewidth=0)
+            return [c1, c2]
+
+    def r2str(a, b):
+        if not np.isfinite(a):
+            return '< {}'.format(b)
+        elif not np.isfinite(b):
+            return '>= {}'.format(a)
+        else:
+            return '[{}-{})'.format(a, b)
+
+    la = []
+    lt = []
+    for ii, ir in enumerate(IQUAL_RANGES):
+        for mi, mr in enumerate(MAF_RANGES):
+            la.append(DualCircle(MAF_SZMAP[mi], MH_PAL[ii]))
+            lt.append('R2 {} MAF {}'.format(r2str(*ir), r2str(*mr)))
+
+    plt.gcf().legend(la, lt, ncol=3, loc='lower center', frameon=True,
+                     framealpha=1, handler_map={DualCircle: DualCircleHandler()})
+    plt.subplots_adjust(bottom=0.2)
+
+if not mpl.is_interactive():
+    plt.savefig('{}-mh.png'.format(args.output), dpi=300)
+
