@@ -54,6 +54,7 @@ ap.add_argument('-o', dest='output', required=True,
                  metavar='PREFIX', help='output prefix')
 ap.add_argument('--iqual-dir', help='Imputation quality directory')
 ap.add_argument('--title', help='Plot title')
+ap.add_argument('--xlabel', action='store_true', help='Set X Label to "Chromosome"')
 ap.add_argument('--ylim', type=float, default=MH_YLIM, help='Y upper limit (default: {})'.format(MH_YLIM))
 ap.add_argument('--no-legend', action='store_true', help='Disable legend')
 ap.add_argument('--chr', metavar=('START', 'END'), nargs=2, default=[CHROM_LIST[0], CHROM_LIST[-1]],
@@ -214,6 +215,8 @@ plt.ylabel(r'$-\log_{10}(p)$')
 
 if args.title:
     plt.title(args.title)
+if args.xlabel:
+    plt.xlabel("Chromosome")
 plt.tight_layout()
 
 if not args.no_legend:
