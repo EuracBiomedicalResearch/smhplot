@@ -203,6 +203,9 @@ else:
 
                 # plot
                 buf = buf[-np.log10(buf.PVALUE) > yr[1]]
+                if len(buf) == 0:
+                    continue
+
                 cslot = MH_PAL[ii]
                 col = cslot[chrom % len(cslot)]
                 sz = MAF_SZMAP[mi]
