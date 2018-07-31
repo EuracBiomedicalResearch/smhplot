@@ -174,8 +174,11 @@ for chrom in CHROM_LIST[chrom_sset]:
 thres = -np.log10(MH_THRES)
 ylim = -np.log10(args.ylim) if np.isfinite(args.ylim) else None
 if ylim is None or ylim > yr[1]:
-    # unlimited or no values above the limit
-    yr[1] = max(yr[1], thres) * MH_YSPC
+    # no truncation required
+    if ylim is None:
+        yr[1] = max(yr[1], thres) * MH_YSPC
+    else:
+        yr[1] = ylim
 else:
     # truncation markers are required
     yr[1] = ylim * MH_YSPC
