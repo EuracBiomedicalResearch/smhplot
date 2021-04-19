@@ -85,8 +85,11 @@ for fn in args.input:
     print("loading data from {} ...".format(fn))
     buf = pd.read_table(fn, sep="\t", encoding="latin1", header=0,
                         usecols=['#CHROM', 'BEG', 'PVALUE', 'MAF'],
-                        dtype={'#CHROM': int, 'BEG': int, 'PVALUE': float, 'MAF': float})
+                        dtype={'BEG': int, 'PVALUE': float, 'MAF': float})
     buf.rename(columns={'#CHROM': 'CHROM'}, inplace=True)
+    if buf['CHROM'].dtype == np.dtype('O'):
+        buf['CHROM'] = buf['CHROM'].str.replace(r'^chr', '')
+    buf['CHROM'] = buf['CHROM'].astype(int)
     buf.dropna(subset=['CHROM', 'BEG', 'PVALUE'], inplace=True)
     data = data.append(buf)
 
