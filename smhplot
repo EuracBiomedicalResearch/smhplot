@@ -40,7 +40,7 @@ IQUAL_RANGES = [[.9,float('NaN')],
 
 MH_YLIM = 1e-20
 MH_YSPC = 1.025
-MH_THRES = 5e-8
+MH_THRES = 1.46e-4
 MH_PAL = [['#e24662', '#50b6ff'],
           ['#9c2725', '#4c48b4'],
           ['#f4a4bf', '#919dc2']]
@@ -55,6 +55,7 @@ ap.add_argument('--iqual-dir', help='Imputation quality directory')
 ap.add_argument('--title', help='Plot title')
 ap.add_argument('--xlabel', action='store_true', help='Set X Label to "Chromosome"')
 ap.add_argument('--ylim', type=float, default=MH_YLIM, help='Y upper limit (default: {})'.format(MH_YLIM))
+ap.add_argument('--thres', type=float, default=MH_THRES, help='Significance threshold (default: {})'.format(MH_THRES))
 ap.add_argument('--no-legend', action='store_true', help='Disable legend')
 ap.add_argument('--chr', metavar=('START', 'END'), nargs=2, default=[CHROM_LIST[0], CHROM_LIST[-1]],
                 type=int, help="Chromosome range to plot (default: {}-{})".format(CHROM_LIST[0], CHROM_LIST[-1]))
@@ -173,7 +174,7 @@ for chrom in CHROM_LIST[chrom_sset]:
             plt.scatter(buf.POS, pval, s=sz, c=col, edgecolors=None)
 
 # ylim adjustment
-thres = -np.log10(MH_THRES)
+thres = -np.log10(args.thres)
 ylim = -np.log10(args.ylim) if np.isfinite(args.ylim) else None
 if ylim is None or ylim > yr[1]:
     # no truncation required
