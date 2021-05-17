@@ -2,15 +2,18 @@
 smhplot: Sparkling Manhattan Plot
 =================================
 
-.. contents::
+Dazzling Manhattan plots for EPACTS_ results augmented with R² and MAF
+data and several quality of life improvements.
 
-`smhplot` ...
+.. image:: doc/ODcpRATIO5res-mh.png
+  :align: center
+  :width: 100%
+
+.. _EPACTS: https://genome.sph.umich.edu/wiki/EPACTS
 
 
 Authors and Copyright
 ---------------------
-
-`smhplot` can be found at https://...
 
 | `smhplot` is distributed under GNU AGPLv3+, WITHOUT ANY WARRANTY.
 | Copyright(c) 2016-2021: Yuri D'Elia <yuri.delia@eurac.edu>
